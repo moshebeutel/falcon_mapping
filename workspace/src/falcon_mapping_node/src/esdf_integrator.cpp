@@ -1,8 +1,10 @@
-#include "esdf_integrator.hpp"
+#include "falcon_mapping/esdf_integrator.hpp"
 #include <queue>
 #include <cmath>
 
-namespace mapping
+
+
+namespace falcon_mapping
 {
     ESDFIntegrator::ESDFIntegrator(float res,int sx,int sy,int sz)
     : resolution_(res), size_x_(sx), size_y_(sy), size_z_(sz)

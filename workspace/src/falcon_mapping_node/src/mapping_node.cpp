@@ -5,11 +5,11 @@
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
-#include "esdf_integrator.hpp"
-#include "tsdf_integrator.hpp"
+#include "falcon_mapping/esdf_integrator.hpp"
+#include "falcon_mapping/tsdf_integrator.hpp"
 
 
-namespace mapping
+namespace falcon_mapping
 {
     class MappingNode : public rclcpp::Node {
     public:
@@ -71,7 +71,7 @@ namespace mapping
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<mapping::MappingNode>());
+    rclcpp::spin(std::make_shared<falcon_mapping::MappingNode>());
     rclcpp::shutdown();
     return 0;
 }

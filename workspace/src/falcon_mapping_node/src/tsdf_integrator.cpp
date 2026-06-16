@@ -1,9 +1,9 @@
 //
 // Created by user1 on 6/15/26.
 //
-#include "tsdf_integrator.hpp"
 
-namespace mapping
+#include "falcon_mapping/tsdf_integrator.hpp"
+namespace falcon_mapping
 {
 
     TSDFIntegrator::TSDFIntegrator(float resolution, float trunc_dist,
