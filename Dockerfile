@@ -59,34 +59,34 @@ RUN rosdep init || true && rosdep update
 # Workspace
 # =========================
 WORKDIR /workspace
-RUN mkdir -p /workspace/src/
-RUN mkdir -p /workspace/src/falcon_mapping_node
+RUN bash -c "mkdir /workspace/src/"
+#RUN bash -c "mkdir /workspace/src/falcon_mapping_node"
 
 
 # =========================
 # Copy your package
 # =========================
 # (assumes Docker build context contains your ROS2 package)
-COPY ./src /workspace/src/falcon_mapping_node/src
-COPY ./include /workspace/src/falcon_mapping_node/include
-COPY ./launch /workspace/src/falcon_mapping_node/launch
-COPY ./CMakeLists.txt /workspace/src/falcon_mapping_node/
-COPY ./package.xml /workspace/src/falcon_mapping_node/
+#COPY ./src /workspace/src/
+#COPY src/falcon_mapping_node/include /workspace/src/falcon_mapping_node/
+#COPY src/falcon_mapping_node/launch /workspace/src/falcon_mapping_node/
+#COPY ./CMakeLists.txt /workspace/src/falcon_mapping_node/
+#COPY ./package.xml /workspace/src/falcon_mapping_node/
 
 
 
 # =========================
 # Build workspace
 # =========================
-RUN . /opt/ros/humble/setup.sh && \
-    rosdep install --from-paths src --ignore-src -r -y && \
-    colcon build --symlink-install
+#RUN . /opt/ros/humble/setup.sh && \
+#    rosdep install --from-paths src --ignore-src -r -y && \
+#    colcon build --symlink-install
 
 # =========================
 # Environment setup
 # =========================
-RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
-    echo "source /workspace/install/setup.bash" >> ~/.bashrc
+#RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
+#    echo "source /workspace/install/setup.bash" >> ~/.bashrc
 
 # =========================
 # Default command
