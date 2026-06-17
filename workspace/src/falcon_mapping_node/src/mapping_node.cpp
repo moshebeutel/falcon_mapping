@@ -18,15 +18,15 @@ namespace falcon_mapping
     class MappingNode : public rclcpp::Node {
     public:
         MappingNode() : Node("falcon_mapping_node"),
-            tsdf_(0.1, 0.3, 200,200,80),
-            esdf_(0.1, 200,200,80)
+            tsdf_integrator_(0.1, 0.3, 200,200,80),
+            esdf_integrator_(0.1, 200,200,80)
         {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Initializing Falcon Mapping Node...");
 
-            esdf.resize(size_x_ * size_y_, 1000.0f);
-            occupied.resize(size_x_ * size_y_, false);
+            esdf_.resize(size_x_ * size_y_, 1e6f);
+            occupied_.resize(size_x_ * size_y_, false);
             grid_.resize(size_x_ * size_y_, -1);
-            // esdf_.updateFromTSDF(tsdf_.getTSDF(), tsdf_.getWeight());
+            // esdf_integrator_.updateFromTSDF(tsdf_integrator_.getTSDF(), tsdf_integrator_.getWeight());
 
             // publishOccupancy();
 
@@ -63,8 +63,8 @@ namespace falcon_mapping
         }
 
     private:
-        TSDFIntegrator tsdf_;
-        ESDFIntegrator esdf_;
+        TSDFIntegrator tsdf_integrator_;
+        ESDFIntegrator esdf_integrator_;
         
         // ROS   pub sub
         rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
@@ -89,8 +89,8 @@ namespace falcon_mapping
         int size_y_ = 200;
         float resolution_ = 0.05f;
 
-        std::vector<float> esdf;
-        std::vector<bool> occupied;
+        std::vector<float> esdf_;
+        std::vector<bool> occupied_;
 
         inline bool worldToGrid(float x, float y, int &ix, int &iy)
         {
@@ -200,7 +200,7 @@ namespace falcon_mapping
 
             // RCLCPP_INFO(this->get_logger(), "Updated occupied grid with %zu points", pts.size());
 
-            // computeESDF();
+            // computeESDFNaive();
 
             // RCLCPP_INFO(this->get_logger(), "Computed ESDF from occupied grid");
 
@@ -208,8 +208,8 @@ namespace falcon_mapping
 
             // RCLCPP_INFO(this->get_logger(), "Published ESDF");
 
-            // tsdf_.integratePointCloud(pts, Eigen::Vector3f(0,0,0));
-            // esdf_.updateFromTSDF(tsdf_.getTSDF(), tsdf_.getWeight());
+            // tsdf_integrator_.integratePointCloud(pts, Eigen::Vector3f(0,0,0));
+            // esdf_integrator_.updateFromTSDF(tsdf_integrator_.getTSDF(), tsdf_integrator_.getWeight());
 
             // publishOccupancy();
 
@@ -218,7 +218,22 @@ namespace falcon_mapping
 
             publishMap();
 
+            updateOccupiedESDFUsingMapGrid();
+
+            computeESDF();
+
+            publishESDF();
+
         
+        }
+
+
+        void updateOccupiedESDFUsingMapGrid() {
+            for (size_t i = 0; i < grid_.size(); ++i)
+            {
+                occupied_[i] = (grid_[i] == 100);
+                esdf_[i] = occupied_[i] ? 0.0f : 1e6f;
+            }
         }
 
         void updateOccupiedGrid(const std::vector<Eigen::Vector3f>& pts) {
@@ -232,19 +247,82 @@ namespace falcon_mapping
 
                 if (ix >= 0 && ix < size_x_ && iy >= 0 && iy < size_y_)
                 {
-                    occupied[iy * size_x_ + ix] = true;
-                    esdf[iy * size_x_ + ix] = 0.0f;
+                    occupied_[iy * size_x_ + ix] = true;
+                    esdf_[iy * size_x_ + ix] = 0.0f;
                 }
             }
         }
 
-        void computeESDF()
+        void computeESDF() 
+        {
+            auto idx = [&](int x, int y) {
+                return y * size_x_ + x;
+            };
+
+            float d1 = resolution_;           // straight step
+            float d2 = resolution_ * 1.414f;  // diagonal
+
+            // ===== FORWARD PASS =====
+            for (int y = 0; y < size_y_; ++y)
+            {
+                for (int x = 0; x < size_x_; ++x)
+                {
+                    int i = idx(x, y);
+
+                    if (esdf_[i] == 0.0f) continue;
+
+                    float min_d = esdf_[i];
+
+                    if (x > 0)
+                        min_d = std::min(min_d, esdf_[idx(x-1, y)] + d1);
+
+                    if (y > 0)
+                        min_d = std::min(min_d, esdf_[idx(x, y-1)] + d1);
+
+                    if (x > 0 && y > 0)
+                        min_d = std::min(min_d, esdf_[idx(x-1, y-1)] + d2);
+
+                    if (x < size_x_-1 && y > 0)
+                        min_d = std::min(min_d, esdf_[idx(x+1, y-1)] + d2);
+
+                    esdf_[i] = min_d;
+                }
+            }
+
+    // ===== BACKWARD PASS =====
+    for (int y = size_y_ - 1; y >= 0; --y)
+    {
+        for (int x = size_x_ - 1; x >= 0; --x)
+        {
+            int i = idx(x, y);
+
+            float min_d = esdf_[i];
+
+            if (x < size_x_-1)
+                min_d = std::min(min_d, esdf_[idx(x+1, y)] + d1);
+
+            if (y < size_y_-1)
+                min_d = std::min(min_d, esdf_[idx(x, y+1)] + d1);
+
+            if (x < size_x_-1 && y < size_y_-1)
+                min_d = std::min(min_d, esdf_[idx(x+1, y+1)] + d2);
+
+            if (x > 0 && y < size_y_-1)
+                min_d = std::min(min_d, esdf_[idx(x-1, y+1)] + d2);
+
+            esdf_[i] = min_d;
+        }
+    }
+}
+
+
+        void computeESDFNaive()
         {
             for (int y = 0; y < size_y_; ++y)
             {
                 for (int x = 0; x < size_x_; ++x)
                 {
-                    if (occupied[y * size_x_ + x]) continue;
+                    if (occupied_[y * size_x_ + x]) continue;
 
                     float min_dist = 1e6;
 
@@ -252,7 +330,7 @@ namespace falcon_mapping
                     {
                         for (int xx = 0; xx < size_x_; ++xx)
                         {
-                            if (!occupied[yy * size_x_ + xx]) continue;
+                            if (!occupied_[yy * size_x_ + xx]) continue;
 
                             float dx = (x - xx) * resolution_;
                             float dy = (y - yy) * resolution_;
@@ -262,7 +340,7 @@ namespace falcon_mapping
                         }
                     }
 
-                    esdf[y * size_x_ + x] = min_dist;
+                    esdf_[y * size_x_ + x] = min_dist;
                 }
             }
         }
@@ -271,22 +349,48 @@ namespace falcon_mapping
         {
             nav_msgs::msg::OccupancyGrid msg;
 
+            msg.header.frame_id = "map";
             msg.info.resolution = resolution_;
             msg.info.width = size_x_;
             msg.info.height = size_y_;
 
+            msg.info.origin.position.x = - (size_x_ * resolution_) / 2;
+            msg.info.origin.position.y = - (size_y_ * resolution_) / 2;
+
             msg.data.resize(size_x_ * size_y_);
 
-            for (size_t i = 0; i < esdf.size(); ++i)
+            for (size_t i = 0; i < esdf_.size(); ++i)
             {
-                float d = esdf[i];
+                float d = esdf_[i];
 
+                // clamp for visualization
                 int val = std::min(100, static_cast<int>(d * 20));
                 msg.data[i] = val;
             }
 
             esdf_pub_->publish(msg);
         }
+
+        // void publishESDF()
+        // {
+        //     nav_msgs::msg::OccupancyGrid msg;
+
+        //     msg.info.resolution = resolution_;
+        //     msg.info.width = size_x_;
+        //     msg.info.height = size_y_;
+
+        //     msg.data.resize(size_x_ * size_y_);
+
+        //     for (size_t i = 0; i < esdf_.size(); ++i)
+        //     {
+        //         float d = esdf_[i];
+
+        //         int val = std::min(100, static_cast<int>(d * 20));
+        //         msg.data[i] = val;
+        //     }
+
+        //     esdf_pub_->publish(msg);
+        // }
 
         std::vector<Eigen::Vector3f> project(
             const sensor_msgs::msg::LaserScan::SharedPtr& scan)
@@ -334,8 +438,8 @@ namespace falcon_mapping
         //         angle += msg->angle_increment;
         //     }
 
-        //     tsdf_.integratePointCloud(pts, Eigen::Vector3f(0,0,0));
-        //     esdf_.updateFromTSDF(tsdf_.getTSDF(), tsdf_.getWeight());
+        //     tsdf_integrator_.integratePointCloud(pts, Eigen::Vector3f(0,0,0));
+        //     esdf_integrator_.updateFromTSDF(tsdf_integrator_.getTSDF(), tsdf_integrator_.getWeight());
 
         //     publishOccupancy();
         // }
