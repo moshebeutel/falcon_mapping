@@ -6,6 +6,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 include_directories(
         include
@@ -22,6 +23,7 @@ ament_target_dependencies(mapping_node
         rclcpp
         sensor_msgs
         nav_msgs
+        visualization_msgs
 )
 
 install(TARGETS mapping_node

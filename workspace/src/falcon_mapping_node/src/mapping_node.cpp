@@ -7,6 +7,7 @@
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <Eigen/Dense>
 
 #include "falcon_mapping/esdf_integrator.hpp"
@@ -24,6 +25,7 @@ namespace falcon_mapping
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Initializing Falcon Mapping Node...");
 
             esdf_.resize(size_x_ * size_y_, 1e6f);
+            grad_.resize(size_x_ * size_y_, Eigen::Vector2f(0, 0));
             occupied_.resize(size_x_ * size_y_, false);
             grid_.resize(size_x_ * size_y_, -1);
             // esdf_integrator_.updateFromTSDF(tsdf_integrator_.getTSDF(), tsdf_integrator_.getWeight());
@@ -60,6 +62,9 @@ namespace falcon_mapping
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Created map publisher");
 
 
+            grad_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("/map/gradients", 1);
+
+
         }
 
     private:
@@ -73,7 +78,7 @@ namespace falcon_mapping
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
         
-        
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grad_pub_;
         
         
         
@@ -90,6 +95,7 @@ namespace falcon_mapping
         float resolution_ = 0.05f;
 
         std::vector<float> esdf_;
+        std::vector<Eigen::Vector2f> grad_;
         std::vector<bool> occupied_;
 
         inline bool worldToGrid(float x, float y, int &ix, int &iy)
@@ -131,7 +137,23 @@ namespace falcon_mapping
             }
         }
         
+        void computeGradient()
+        {
+            auto idx = [&](int x, int y) {
+                return y * size_x_ + x;
+            };
 
+            for (int y = 1; y < size_y_ - 1; ++y)
+            {
+                for (int x = 1; x < size_x_ - 1; ++x)
+                {
+                    float dx = (esdf_[idx(x+1,y)] - esdf_[idx(x-1,y)]) / (2.0f * resolution_);
+                    float dy = (esdf_[idx(x,y+1)] - esdf_[idx(x,y-1)]) / (2.0f * resolution_);
+
+                    grad_[idx(x,y)] = Eigen::Vector2f(dx, dy);
+                }
+            }
+        }
         void updateWorldMapClearByRayTrace(std::vector<Eigen::Vector3f> pts)
         {
             const auto& p = current_odom_.pose.pose.position;
@@ -222,8 +244,11 @@ namespace falcon_mapping
 
             computeESDF();
 
+            computeGradient();
+
             publishESDF();
 
+            publishGradients();
         
         }
 
@@ -289,31 +314,31 @@ namespace falcon_mapping
                 }
             }
 
-    // ===== BACKWARD PASS =====
-    for (int y = size_y_ - 1; y >= 0; --y)
-    {
-        for (int x = size_x_ - 1; x >= 0; --x)
-        {
-            int i = idx(x, y);
+            // ===== BACKWARD PASS =====
+            for (int y = size_y_ - 1; y >= 0; --y)
+            {
+                for (int x = size_x_ - 1; x >= 0; --x)
+                {
+                    int i = idx(x, y);
 
-            float min_d = esdf_[i];
+                    float min_d = esdf_[i];
 
-            if (x < size_x_-1)
-                min_d = std::min(min_d, esdf_[idx(x+1, y)] + d1);
+                    if (x < size_x_-1)
+                        min_d = std::min(min_d, esdf_[idx(x+1, y)] + d1);
 
-            if (y < size_y_-1)
-                min_d = std::min(min_d, esdf_[idx(x, y+1)] + d1);
+                    if (y < size_y_-1)
+                        min_d = std::min(min_d, esdf_[idx(x, y+1)] + d1);
 
-            if (x < size_x_-1 && y < size_y_-1)
-                min_d = std::min(min_d, esdf_[idx(x+1, y+1)] + d2);
+                    if (x < size_x_-1 && y < size_y_-1)
+                        min_d = std::min(min_d, esdf_[idx(x+1, y+1)] + d2);
 
-            if (x > 0 && y < size_y_-1)
-                min_d = std::min(min_d, esdf_[idx(x-1, y+1)] + d2);
+                    if (x > 0 && y < size_y_-1)
+                        min_d = std::min(min_d, esdf_[idx(x-1, y+1)] + d2);
 
-            esdf_[i] = min_d;
+                    esdf_[i] = min_d;
+                }
+            }
         }
-    }
-}
 
 
         void computeESDFNaive()
@@ -344,6 +369,49 @@ namespace falcon_mapping
                 }
             }
         }
+
+        void publishGradients()
+        {
+            visualization_msgs::msg::MarkerArray markers;
+
+            int id = 0;
+
+            for (int y = 0; y < size_y_; y += 10)
+            {
+                for (int x = 0; x < size_x_; x += 10)
+                {
+                    int i = y * size_x_ + x;
+
+                    Eigen::Vector2f g = grad_[i];
+
+                    geometry_msgs::msg::Point p;
+                    p.x = (x - size_x_/2) * resolution_;
+                    p.y = (y - size_y_/2) * resolution_;
+
+                    visualization_msgs::msg::Marker m;
+                    m.header.frame_id = "map";
+                    m.id = id++;
+                    m.type = visualization_msgs::msg::Marker::ARROW;
+                    m.scale.x = 0.02;
+                    m.scale.y = 0.04;
+
+                    geometry_msgs::msg::Point p2;
+                    p2.x = p.x + g.x() * 0.2;
+                    p2.y = p.y + g.y() * 0.2;
+
+                    m.points.push_back(p);
+                    m.points.push_back(p2);
+
+                    m.color.g = 1.0;
+                    m.color.a = 1.0;
+
+                    markers.markers.push_back(m);
+                }
+            }
+
+            grad_pub_->publish(markers);
+        }
+
 
         void publishESDF()
         {
