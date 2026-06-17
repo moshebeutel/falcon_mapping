@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     gazebo \
     ros-humble-gazebo-ros-pkgs \
     ros-humble-gazebo-plugins \
+    ros-humble-topic-tools \
     ros-humble-turtlebot3-gazebo \
     ros-humble-turtlebot3-description \
     && rm -rf /var/lib/apt/lists/*
