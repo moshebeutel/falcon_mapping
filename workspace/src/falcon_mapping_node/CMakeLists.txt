@@ -26,8 +26,18 @@ ament_target_dependencies(mapping_node
         visualization_msgs
 )
 
-install(TARGETS mapping_node
-        DESTINATION lib/${PROJECT_NAME}
+add_executable(simple_planner src/simple_planner.cpp)
+
+ament_target_dependencies(simple_planner
+        rclcpp
+        nav_msgs
+        geometry_msgs
 )
+
+install(TARGETS
+        mapping_node
+        simple_planner
+        DESTINATION lib/${PROJECT_NAME})
+
 
 ament_package()
