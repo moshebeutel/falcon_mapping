@@ -15,8 +15,15 @@ RUN apt-get update && apt-get install -y \
     ros-humble-gazebo-ros-pkgs \
     ros-humble-gazebo-plugins \
     ros-humble-topic-tools \
+    ros-humble-turtlebot3 \
     ros-humble-turtlebot3-gazebo \
     ros-humble-turtlebot3-description \
+    ros-humble-rviz2 \
+    ros-humble-visualization-msgs \
+    ros-humble-teleop-twist-keyboard \
+    ros-humble-joint-state-publisher \
+    gazebo \
+    mesa-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rosdep init || true && rosdep update
